@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#E8ECF2" />
+<title>Home Lights</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon.png" />
+<style>
+  :root{
+    --bg:#E8ECF2; --surface:#FFFFFF; --border:#E2E7EF; --text:#2A2F3A;
+    --muted:#8A93A6; --accent:#6C8CFF; --teal:#5BD0B0; --pink:#FF9DB0;
+    --radius:20px; --shadow:0 6px 20px rgba(42,47,58,.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:max(16px,env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+    max-width:520px;margin:0 auto;-webkit-font-smoothing:antialiased}
+  h1{font-size:24px;font-weight:600;margin:8px 0 2px}
+  h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:26px 4px 12px}
+  .sub{color:var(--muted);font-size:14px;margin:0 4px 4px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px 18px;margin-bottom:12px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .name{font-size:17px;font-weight:600}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .scenes{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid var(--border);background:var(--surface);color:var(--text);
+    border-radius:14px;padding:10px 16px;font-size:15px;font-weight:500;box-shadow:var(--shadow);
+    cursor:pointer;transition:transform .08s}
+  .chip:active{transform:scale(.96)}
+  .chip.ghost{background:transparent;box-shadow:none;border-style:dashed;color:var(--muted)}
+  .toggle{width:52px;height:32px;border-radius:18px;background:var(--border);position:relative;
+    cursor:pointer;transition:background .2s;flex:none}
+  .toggle.on{background:var(--accent)}
+  .toggle::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s}
+  .toggle.on::after{left:23px}
+  .slider-wrap{margin-top:14px}
+  .slider-wrap label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:6px}
+  input[type=range]{width:100%;-webkit-appearance:none;height:8px;border-radius:6px;background:var(--border);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;
+    background:var(--accent);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+  .temp::-webkit-slider-thumb{background:linear-gradient(90deg,#FFB066,#9CC3FF)}
+  .swatches{display:flex;gap:10px;margin-top:14px}
+  .sw{width:30px;height:30px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.15);cursor:pointer}
+  .field{margin-top:12px}
+  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+  select,input[type=time],input[type=number],input[type=text]{width:100%;padding:11px 12px;border:1px solid var(--border);
+    border-radius:12px;background:var(--surface);color:var(--text);font-size:15px;font-family:inherit}
+  .btn{width:100%;padding:13px;border:none;border-radius:14px;background:var(--accent);color:#fff;
+    font-size:16px;font-weight:600;cursor:pointer;margin-top:14px}
+  .btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+  .ok{color:var(--teal)}
+  .gate{min-height:70vh;display:flex;flex-direction:column;justify-content:center}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--text);color:#fff;
+    padding:10px 18px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9}
+  .toast.show{opacity:1}
+  .hidden{display:none}
+  small.note{color:var(--muted);font-size:12px;display:block;margin-top:8px;line-height:1.5}
+  .check{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:15px}
+  .check input{width:20px;height:20px}
+</style>
+</head>
+<body>
+<div id="gate" class="gate hidden">
+  <h1>Home Lights</h1>
+  <p class="sub">Enter your access code to connect.</p>
+  <div class="card">
+    <div class="field"><label>Access code</label>
+      <input id="code" type="text" placeholder="paste your code" autocomplete="off" /></div>
+    <button class="btn" id="connect">Connect</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="row"><h1>Home Lights</h1><span class="pill" id="status">···</span></div>
+
+  <h2>Scenes</h2>
+  <div class="scenes" id="scenes"></div>
+
+  <h2>Lights</h2>
+  <div id="devices"></div>
+
+  <h2>Arrive &amp; leave</h2>
+  <div class="card">
+    <div class="row"><span class="name" style="font-size:15px">Home location</span>
+      <span id="homeState" class="pill">not set</span></div>
+    <button class="btn sec" id="homeBtn">Use my current location</button>
+    <small class="note">Sets the spot used to calculate sunset (day vs evening). Tap this while you're home.</small>
+    <div class="field"><label>When I arrive in daytime</label><select id="rDay"></select></div>
+    <div class="field"><label>When I arrive in evening</label><select id="rEve"></select></div>
+    <div class="field"><label>When I leave</label><select id="rAway"></select></div>
+    <button class="btn" id="rolesBtn">Save automations</button>
+  </div>
+
+  <h2>Sunrise ramp</h2>
+  <div class="card">
+    <div class="row"><span class="name" style="font-size:15px">Gentle wake-up</span>
+      <div id="srToggle" class="toggle"></div></div>
+    <small class="note">Lights start very dim &amp; warm, then brighten over your chosen window.</small>
+    <div class="grid2" style="margin-top:14px">
+      <div class="field" style="margin:0"><label>Start time</label><input id="srStart" type="time" /></div>
+      <div class="field" style="margin:0"><label>Duration (min)</label><input id="srDur" type="number" min="5" max="120" /></div>
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="field" style="margin:0"><label>Start brightness %</label><input id="srB0" type="number" min="1" max="100" /></div>
+      <div class="field" style="margin:0"><label>End brightness %</label><input id="srB1" type="number" min="1" max="100" /></div>
+    </div>
+    <div class="field"><label>Which lights</label><div id="srDevices"></div></div>
+    <button class="btn" id="srBtn">Save sunrise</button>
+  </div>
+
+  <small class="note" style="text-align:center;margin-top:20px">Govee Home Lights · running on your private Supabase</small>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const CONTROL = "https://vmgauldipfejoshidsyw.supabase.co/functions/v1/control";
+let CODE = localStorage.getItem("lights_code") || "";
+let STATE = {devices:[], presets:[], sunrise:{}, roles:{}, home:false};
+const ui = {};
+const $ = (id) => document.getElementById(id);
+
+function h(tag, props, kids){
+  const el = document.createElement(tag);
+  if(props) for(const k in props){
+    if(k === "text") el.textContent = props[k];
+    else if(k === "class") el.className = props[k];
+    else if(k === "style") el.style.cssText = props[k];
+    else if(k.startsWith("on")) el.addEventListener(k.slice(2), props[k]);
+    else el.setAttribute(k, props[k]);
+  }
+  if(kids) for(const c of kids) el.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  return el;
+}
+
+let tt;
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");
+  clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800);}
+
+async function api(payload){
+  const r = await fetch(CONTROL + "?key=" + encodeURIComponent(CODE), {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+  if(r.status===401){gate();throw new Error("unauthorized");}
+  return r.json();
+}
+
+function gate(){$("app").classList.add("hidden");$("gate").classList.remove("hidden");}
+function saveCode(){CODE=$("code").value.trim();localStorage.setItem("lights_code",CODE);boot();}
+function track(k){return (ui[k] = ui[k] || {});}
+function caps(d){return new Set(d.capabilities||[]);}
+
+function deviceCard(d){
+  const tog = h("div",{class:"toggle"});
+  tog.addEventListener("click",()=>{
+    const on = tog.classList.toggle("on");
+    api({action:"command",device:d.key,capability:{type:"devices.capabilities.on_off",instance:"powerSwitch",value:on?1:0}});
+    track(d.key).power = on?1:0;
+  });
+  const card = h("div",{class:"card"},[
+    h("div",{class:"row"},[ h("span",{class:"name",text:d.name}), tog ])
+  ]);
+  const c = caps(d);
+  if(c.has("brightness")){
+    const out = h("span",{text:"70%"});
+    const inp = h("input",{type:"range",min:"1",max:"100",value:"70"});
+    inp.addEventListener("input",()=>{out.textContent=inp.value+"%";});
+    inp.addEventListener("change",()=>{
+      api({action:"command",device:d.key,capability:{type:"devices.capabilities.range",instance:"brightness",value:+inp.value}});
+      track(d.key).brightness=+inp.value; tog.classList.add("on");});
+    card.appendChild(h("div",{class:"slider-wrap"},[ h("label",null,["Brightness ",out]), inp ]));
+  }
+  if(c.has("colorTemperatureK")){
+    const inp = h("input",{class:"temp",type:"range",min:"2000",max:"6500",step:"100",value:"3000"});
+    inp.addEventListener("change",()=>{
+      api({action:"command",device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorTemperatureK",value:+inp.value}});
+      track(d.key).kelvin=+inp.value; tog.classList.add("on");});
+    card.appendChild(h("div",{class:"slider-wrap"},[ h("label",null,["Warm · Cool"]), inp ]));
+  }
+  if(c.has("colorRgb")){
+    const cols=[["#FF5C5C",0xFF5C5C],["#FFB066",0xFFB066],["#FFE7A0",0xFFE7A0],
+      ["#7CE0B0",0x7CE0B0],["#6C8CFF",0x6C8CFF],["#C792FF",0xC792FF]];
+    const sw = h("div",{class:"swatches"});
+    for(const [hex,int] of cols){
+      sw.appendChild(h("div",{class:"sw",style:"background:"+hex,onclick:()=>{
+        api({action:"command",device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorRgb",value:int}});
+        track(d.key).rgb=int; tog.classList.add("on");}}));
+    }
+    card.appendChild(sw);
+  }
+  return card;
+}
+
+function buildUIStateCommands(){
+  const cmds=[];
+  for(const d of STATE.devices){
+    const u=ui[d.key]; if(!u) continue;
+    if(u.power===0){cmds.push({device:d.key,capability:{type:"devices.capabilities.on_off",instance:"powerSwitch",value:0}});continue;}
+    cmds.push({device:d.key,capability:{type:"devices.capabilities.on_off",instance:"powerSwitch",value:1}});
+    if(u.brightness!=null)cmds.push({device:d.key,capability:{type:"devices.capabilities.range",instance:"brightness",value:u.brightness}});
+    if(u.rgb!=null)cmds.push({device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorRgb",value:u.rgb}});
+    else if(u.kelvin!=null)cmds.push({device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorTemperatureK",value:u.kelvin}});
+  }
+  return cmds;
+}
+
+async function savePreset(){
+  const name=prompt("Name this scene (e.g. Arrive – Evening):"); if(!name)return;
+  const commands=buildUIStateCommands();
+  if(!commands.length){toast("Adjust some lights first");return;}
+  await api({action:"savePreset",name,commands}); toast("Saved "+name); boot();
+}
+
+function renderScenes(){
+  const box=$("scenes"); box.replaceChildren();
+  for(const p of STATE.presets){
+    box.appendChild(h("button",{class:"chip",text:p.name,onclick:()=>api({action:"preset",name:p.name}).then(()=>toast(p.name))}));
+  }
+  box.appendChild(h("button",{class:"chip ghost",text:"＋ Save current",onclick:savePreset}));
+}
+
+function fillRoleSelects(){
+  for(const [id,val] of [["rDay",STATE.roles.day],["rEve",STATE.roles.evening],["rAway",STATE.roles.away]]){
+    const s=$(id); s.replaceChildren();
+    s.appendChild(h("option",{value:"",text:"— none —"}));
+    for(const p of STATE.presets) s.appendChild(h("option",{value:p.name,text:p.name}));
+    s.value=val||"";
+  }
+}
+
+function renderSunrise(){
+  const s=STATE.sunrise||{};
+  $("srToggle").classList.toggle("on",!!s.enabled);
+  $("srStart").value=(s.start_time||"06:30").slice(0,5);
+  $("srDur").value=s.duration_min??30;
+  $("srB0").value=s.start_brightness??1;
+  $("srB1").value=s.end_brightness??100;
+  const box=$("srDevices");box.replaceChildren();
+  const sel=new Set(s.device_keys||[]);
+  for(const d of STATE.devices){
+    const cb=h("input",{type:"checkbox",value:d.key});
+    cb.checked=sel.has(d.key);
+    box.appendChild(h("label",{class:"check"},[cb,d.name]));
+  }
+}
+
+async function toggleSunrise(){
+  const t=$("srToggle");const on=!t.classList.contains("on");
+  t.classList.toggle("on",on); await api({action:"setSunrise",enabled:on}); STATE.sunrise.enabled=on;
+  toast(on?"Sunrise on":"Sunrise off");
+}
+async function saveSunrise(){
+  const device_keys=[...document.querySelectorAll("#srDevices input:checked")].map(c=>c.value);
+  await api({action:"setSunrise",
+    start_time:$("srStart").value,
+    duration_min:+$("srDur").value,
+    start_brightness:+$("srB0").value,
+    end_brightness:+$("srB1").value,
+    device_keys});
+  toast("Sunrise saved");
+}
+
+async function setHome(){
+  if(!navigator.geolocation){toast("No geolocation");return;}
+  toast("Getting location…");
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    await api({action:"setHome",lat:pos.coords.latitude,lng:pos.coords.longitude,
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+    const el=$("homeState"); el.replaceChildren(h("span",{class:"ok",text:"set ✓"}));
+    STATE.home=true; toast("Home location saved");
+  },()=>toast("Location denied"),{enableHighAccuracy:true,timeout:10000});
+}
+
+async function saveRoles(){
+  await api({action:"setRoles",day:$("rDay").value,evening:$("rEve").value,away:$("rAway").value});
+  toast("Automations saved");
+}
+
+async function boot(){
+  try{ STATE=await api({action:"list"}); }catch(e){return;}
+  $("gate").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  $("status").textContent=STATE.devices.length+" lights";
+  const dbox=$("devices");dbox.replaceChildren();
+  for(const d of STATE.devices)dbox.appendChild(deviceCard(d));
+  renderScenes(); fillRoleSelects(); renderSunrise();
+  const hs=$("homeState");
+  if(STATE.home) hs.replaceChildren(h("span",{class:"ok",text:"set ✓"})); else hs.textContent="not set";
+}
+
+$("connect").addEventListener("click",saveCode);
+$("homeBtn").addEventListener("click",setHome);
+$("rolesBtn").addEventListener("click",saveRoles);
+$("srBtn").addEventListener("click",saveSunrise);
+$("srToggle").addEventListener("click",toggleSunrise);
+
+if(CODE) boot(); else gate();
+</script>
+</body>
+</html>
