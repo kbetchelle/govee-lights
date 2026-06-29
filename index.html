@@ -66,6 +66,18 @@
   small.note{color:var(--muted);font-size:12px;display:block;margin-top:8px;line-height:1.5}
   .check{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:15px}
   .check input{width:20px;height:20px}
+  .swatches{flex-wrap:wrap}
+  .swsm{width:28px;height:28px}
+  .colorwheel{width:42px;height:42px;border:none;background:none;padding:0;cursor:pointer}
+  .colorwheel::-webkit-color-swatch{border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+  .colorwheel::-webkit-color-swatch-wrapper{padding:0}
+  .pdots{display:flex;gap:5px;align-items:center}
+  .pdot{width:18px;height:18px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+  .listrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+  .listrow:last-child{border-bottom:none}
+  .del{color:var(--pink);font-size:13px;cursor:pointer;background:none;border:none;font-weight:500;padding:4px}
+  .mini{font-size:13px;color:var(--muted)}
+  .empty{font-size:13px;color:var(--muted);padding:8px 0}
 </style>
 </head>
 <body>
@@ -87,6 +99,32 @@
 
   <h2>Lights</h2>
   <div id="devices"></div>
+
+  <h2>Groups &amp; palettes</h2>
+  <div class="card">
+    <div class="field" style="margin-top:0"><label>Apply a palette to a group</label>
+      <select id="apGroup"></select></div>
+    <div class="field" style="margin-top:10px"><select id="apPalette"></select></div>
+    <div class="grid2" style="margin-top:12px">
+      <button class="btn" id="apApply" style="margin:0">Apply now</button>
+      <button class="btn sec" id="apSave" style="margin:0">Save as scene</button>
+    </div>
+    <small class="note">Spreads the palette's colors across the lights in the group.</small>
+  </div>
+  <div class="card">
+    <div class="name" style="font-size:15px;margin-bottom:4px">Groups</div>
+    <div id="groupList"></div>
+    <div class="field"><label>New group name</label><input id="ngName" type="text" placeholder="e.g. Living room" /></div>
+    <div class="field"><label>Lights in group</label><div id="ngDevices"></div></div>
+    <button class="btn sec" id="ngSave">Add group</button>
+  </div>
+  <div class="card">
+    <div class="name" style="font-size:15px;margin-bottom:4px">Palettes</div>
+    <div id="paletteList"></div>
+    <div class="field"><label>New palette name</label><input id="npName" type="text" placeholder="e.g. Twilight" /></div>
+    <div class="field"><label>Colors</label><div id="npColors" class="pdots" style="flex-wrap:wrap;gap:8px"></div></div>
+    <button class="btn sec" id="npSave">Add palette</button>
+  </div>
 
   <h2>Arrive &amp; leave</h2>
   <div class="card">
@@ -125,9 +163,12 @@
 <script>
 const CONTROL = "https://vmgauldipfejoshidsyw.supabase.co/functions/v1/control";
 let CODE = localStorage.getItem("lights_code") || "";
-let STATE = {devices:[], presets:[], sunrise:{}, roles:{}, home:false};
+let STATE = {devices:[], presets:[], groups:[], palettes:[], sunrise:{}, roles:{}, home:false};
 const ui = {};
 const $ = (id) => document.getElementById(id);
+const intToHex = (i) => "#" + (i & 0xFFFFFF).toString(16).padStart(6, "0");
+const hexToInt = (hx) => parseInt(hx.slice(1), 16);
+let newPaletteColors = ["#FF6B35", "#FF2D9B", "#8A2BE2"];
 
 function h(tag, props, kids){
   const el = document.createElement(tag);
@@ -186,13 +227,17 @@ function deviceCard(d){
     card.appendChild(h("div",{class:"slider-wrap"},[ h("label",null,["Warm · Cool"]), inp ]));
   }
   if(c.has("colorRgb")){
-    const cols=[["#FF5C5C",0xFF5C5C],["#FFB066",0xFFB066],["#FFE7A0",0xFFE7A0],
-      ["#7CE0B0",0x7CE0B0],["#6C8CFF",0x6C8CFF],["#C792FF",0xC792FF]];
+    const cols=[0xFF5C5C,0xFF2D9B,0xFF7AC4,0xFFB066,0xFFE7A0,0xFFF6C0,
+      0x7CE0B0,0x34F5C5,0x00E5FF,0x4FA8FF,0x6C8CFF,0x9D7BFF,0xC792FF,0xFFFFFF];
+    const setColor=(int)=>{
+      api({action:"command",device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorRgb",value:int}});
+      track(d.key).rgb=int; tog.classList.add("on");};
     const sw = h("div",{class:"swatches"});
-    for(const [hex,int] of cols){
-      sw.appendChild(h("div",{class:"sw",style:"background:"+hex,onclick:()=>{
-        api({action:"command",device:d.key,capability:{type:"devices.capabilities.color_setting",instance:"colorRgb",value:int}});
-        track(d.key).rgb=int; tog.classList.add("on");}}));
+    const wheel = h("input",{class:"colorwheel",type:"color",value:"#6C8CFF",title:"Pick any color"});
+    wheel.addEventListener("change",()=>setColor(hexToInt(wheel.value)));
+    sw.appendChild(wheel);
+    for(const int of cols){
+      sw.appendChild(h("div",{class:"sw swsm",style:"background:"+intToHex(int),onclick:()=>setColor(int)}));
     }
     card.appendChild(sw);
   }
@@ -284,6 +329,86 @@ async function saveRoles(){
   toast("Automations saved");
 }
 
+function renderGroupsPalettes(){
+  const ag=$("apGroup"), ap=$("apPalette");
+  ag.replaceChildren(); ap.replaceChildren();
+  for(const g of STATE.groups) ag.appendChild(h("option",{value:g.name,text:g.name}));
+  for(const p of STATE.palettes) ap.appendChild(h("option",{value:p.name,text:p.name}));
+
+  const gl=$("groupList"); gl.replaceChildren();
+  if(!STATE.groups.length) gl.appendChild(h("div",{class:"empty",text:"No groups yet."}));
+  for(const g of STATE.groups){
+    const names=g.device_keys.map(k=>(STATE.devices.find(d=>d.key===k)||{}).name||k).join(", ");
+    gl.appendChild(h("div",{class:"listrow"},[
+      h("div",null,[ h("div",{text:g.name}), h("div",{class:"mini",text:names||"empty"}) ]),
+      h("button",{class:"del",text:"Remove",onclick:()=>deleteGroup(g.name)})
+    ]));
+  }
+
+  const pl=$("paletteList"); pl.replaceChildren();
+  if(!STATE.palettes.length) pl.appendChild(h("div",{class:"empty",text:"No palettes yet."}));
+  for(const p of STATE.palettes){
+    const dots=h("div",{class:"pdots"});
+    for(const c of p.colors) dots.appendChild(h("div",{class:"pdot",style:"background:"+intToHex(c)}));
+    pl.appendChild(h("div",{class:"listrow"},[
+      h("div",null,[ h("div",{text:p.name}), dots ]),
+      h("button",{class:"del",text:"Remove",onclick:()=>deletePalette(p.name)})
+    ]));
+  }
+
+  const ng=$("ngDevices"); ng.replaceChildren();
+  for(const d of STATE.devices){
+    const cb=h("input",{type:"checkbox",value:d.key});
+    ng.appendChild(h("label",{class:"check"},[cb,d.name]));
+  }
+  renderNewPaletteColors();
+}
+
+function renderNewPaletteColors(){
+  const box=$("npColors"); box.replaceChildren();
+  newPaletteColors.forEach((hex,i)=>{
+    const inp=h("input",{class:"colorwheel",type:"color",value:hex});
+    inp.addEventListener("change",()=>{newPaletteColors[i]=inp.value;});
+    box.appendChild(inp);
+  });
+  box.appendChild(h("button",{class:"chip ghost",style:"padding:6px 12px;font-size:14px",text:"＋",
+    onclick:()=>{newPaletteColors.push("#FFFFFF");renderNewPaletteColors();}}));
+  if(newPaletteColors.length>1)
+    box.appendChild(h("button",{class:"chip ghost",style:"padding:6px 12px;font-size:14px",text:"－",
+      onclick:()=>{newPaletteColors.pop();renderNewPaletteColors();}}));
+}
+
+async function applyPaletteNow(){
+  const group=$("apGroup").value, palette=$("apPalette").value;
+  if(!group||!palette){toast("Make a group and palette first");return;}
+  await api({action:"applyPalette",group,palette}); toast(palette+" → "+group);
+}
+async function saveGroupScene(){
+  const group=$("apGroup").value, palette=$("apPalette").value;
+  if(!group||!palette){toast("Make a group and palette first");return;}
+  const name=prompt("Name this scene:", palette+" "+group); if(!name)return;
+  await api({action:"saveGroupPreset",name,group,palette}); toast("Saved "+name); boot();
+}
+async function addGroup(){
+  const name=$("ngName").value.trim();
+  const device_keys=[...document.querySelectorAll("#ngDevices input:checked")].map(c=>c.value);
+  if(!name||!device_keys.length){toast("Name it and pick lights");return;}
+  await api({action:"saveGroup",name,device_keys}); $("ngName").value=""; toast("Group saved"); boot();
+}
+async function deleteGroup(name){
+  await api({action:"deleteGroup",name}); toast("Removed "+name); boot();
+}
+async function addPalette(){
+  const name=$("npName").value.trim();
+  if(!name){toast("Name the palette");return;}
+  const colors=newPaletteColors.map(hexToInt);
+  await api({action:"savePalette",name,colors}); $("npName").value="";
+  newPaletteColors=["#FF6B35","#FF2D9B","#8A2BE2"]; toast("Palette saved"); boot();
+}
+async function deletePalette(name){
+  await api({action:"deletePalette",name}); toast("Removed "+name); boot();
+}
+
 async function boot(){
   try{ STATE=await api({action:"list"}); }catch(e){return;}
   $("gate").classList.add("hidden");
@@ -291,12 +416,16 @@ async function boot(){
   $("status").textContent=STATE.devices.length+" lights";
   const dbox=$("devices");dbox.replaceChildren();
   for(const d of STATE.devices)dbox.appendChild(deviceCard(d));
-  renderScenes(); fillRoleSelects(); renderSunrise();
+  renderScenes(); renderGroupsPalettes(); fillRoleSelects(); renderSunrise();
   const hs=$("homeState");
   if(STATE.home) hs.replaceChildren(h("span",{class:"ok",text:"set ✓"})); else hs.textContent="not set";
 }
 
 $("connect").addEventListener("click",saveCode);
+$("apApply").addEventListener("click",applyPaletteNow);
+$("apSave").addEventListener("click",saveGroupScene);
+$("ngSave").addEventListener("click",addGroup);
+$("npSave").addEventListener("click",addPalette);
 $("homeBtn").addEventListener("click",setHome);
 $("rolesBtn").addEventListener("click",saveRoles);
 $("srBtn").addEventListener("click",saveSunrise);
