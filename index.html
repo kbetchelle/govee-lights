@@ -78,6 +78,21 @@
   .del{color:var(--pink);font-size:13px;cursor:pointer;background:none;border:none;font-weight:500;padding:4px}
   .mini{font-size:13px;color:var(--muted)}
   .empty{font-size:13px;color:var(--muted);padding:8px 0}
+  .autohead{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer}
+  .autobody{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+  .chev{transition:transform .2s;color:var(--muted);font-size:18px;line-height:1}
+  .chev.up{transform:rotate(180deg)}
+  .badge{font-size:11px;font-weight:600;padding:4px 10px;border-radius:11px;white-space:nowrap}
+  .badge.green{background:#E2F6EE;color:#1F8A5F}
+  .badge.amber{background:#FBEFD8;color:#9A6A12}
+  .badge.blue{background:#E7ECFF;color:#3A55C5}
+  .badge.gray{background:#EDEFF3;color:#8A93A6}
+  .statline{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:5px 0}
+  .statline .v{color:var(--muted);text-align:right}
+  .shortcut{background:var(--bg);border-radius:12px;padding:12px 14px;margin-top:16px}
+  .shortcut .lbl{font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px}
+  .codebox{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--surface);
+    border:1px solid var(--border);border-radius:8px;padding:9px;word-break:break-all;color:var(--text)}
 </style>
 </head>
 <body>
@@ -126,34 +141,8 @@
     <button class="btn sec" id="npSave">Add palette</button>
   </div>
 
-  <h2>Arrive &amp; leave</h2>
-  <div class="card">
-    <div class="row"><span class="name" style="font-size:15px">Home location</span>
-      <span id="homeState" class="pill">not set</span></div>
-    <button class="btn sec" id="homeBtn">Use my current location</button>
-    <small class="note">Sets the spot used to calculate sunset (day vs evening). Tap this while you're home.</small>
-    <div class="field"><label>When I arrive in daytime</label><select id="rDay"></select></div>
-    <div class="field"><label>When I arrive in evening</label><select id="rEve"></select></div>
-    <div class="field"><label>When I leave</label><select id="rAway"></select></div>
-    <button class="btn" id="rolesBtn">Save automations</button>
-  </div>
-
-  <h2>Sunrise ramp</h2>
-  <div class="card">
-    <div class="row"><span class="name" style="font-size:15px">Gentle wake-up</span>
-      <div id="srToggle" class="toggle"></div></div>
-    <small class="note">Lights start very dim &amp; warm, then brighten over your chosen window.</small>
-    <div class="grid2" style="margin-top:14px">
-      <div class="field" style="margin:0"><label>Start time</label><input id="srStart" type="time" /></div>
-      <div class="field" style="margin:0"><label>Duration (min)</label><input id="srDur" type="number" min="5" max="120" /></div>
-    </div>
-    <div class="grid2" style="margin-top:10px">
-      <div class="field" style="margin:0"><label>Start brightness %</label><input id="srB0" type="number" min="1" max="100" /></div>
-      <div class="field" style="margin:0"><label>End brightness %</label><input id="srB1" type="number" min="1" max="100" /></div>
-    </div>
-    <div class="field"><label>Which lights</label><div id="srDevices"></div></div>
-    <button class="btn" id="srBtn">Save sunrise</button>
-  </div>
+  <h2>Automations</h2>
+  <div id="automations"></div>
 
   <small class="note" style="text-align:center;margin-top:20px">Govee Home Lights · running on your private Supabase</small>
 </div>
@@ -409,6 +398,86 @@ async function deletePalette(name){
   await api({action:"deletePalette",name}); toast("Removed "+name); boot();
 }
 
+const FUNCS = CONTROL.replace(/\/control$/, "");
+function timeAgo(iso){
+  if(!iso) return "never";
+  const s=(Date.now()-new Date(iso).getTime())/1000;
+  if(s<60) return "just now";
+  if(s<3600) return Math.round(s/60)+"m ago";
+  if(s<86400) return Math.round(s/3600)+"h ago";
+  return Math.round(s/86400)+"d ago";
+}
+function copyText(t){ if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast("Copied")); else toast("Copy not supported"); }
+function statLine(label,val){ return h("div",{class:"statline"},[ h("span",{text:label}), h("span",{class:"v",text:val}) ]); }
+
+function shortcutBox(kind,url){
+  return h("div",{class:"shortcut"},[
+    h("div",{class:"lbl",text:"On your phone · Apple Shortcuts"}),
+    h("div",{class:"mini",style:"margin-bottom:8px"},["Needs a “"+kind+"” Personal Automation that opens this URL (POST):"]),
+    h("div",{class:"codebox",text:url}),
+    h("button",{class:"btn sec",style:"margin-top:8px",text:"Copy URL",onclick:()=>copyText(url)}),
+    h("div",{class:"mini",style:"margin-top:8px"},["The app can’t see your Shortcuts — the “Last run” above tells you if it’s actually firing."])
+  ]);
+}
+
+function autoCard(title,trigger,badgeText,badgeClass,buildBody){
+  const badge=h("span",{class:"badge "+badgeClass,text:badgeText});
+  const chev=h("span",{class:"chev",text:"⌄"});
+  const head=h("div",{class:"autohead"},[
+    h("div",null,[ h("div",{class:"name",style:"font-size:16px",text:title}), h("div",{class:"mini",text:trigger}) ]),
+    h("div",{style:"display:flex;align-items:center;gap:10px"},[badge,chev])
+  ]);
+  const body=h("div",{class:"autobody hidden"});
+  buildBody(body);
+  head.addEventListener("click",()=>{ body.classList.toggle("hidden"); chev.classList.toggle("up"); });
+  return h("div",{class:"card"},[head,body]);
+}
+
+function renderAutomations(){
+  const box=$("automations"); box.replaceChildren();
+  const le=STATE.lastEvents||{}; const r=STATE.roles||{};
+
+  const hasArrive = !!(r.day||r.evening);
+  const [aTxt,aCls] = !hasArrive ? ["Needs a scene","amber"] : (STATE.home ? ["Active","green"] : ["Day only","blue"]);
+  box.appendChild(autoCard("Arrive home","When you reach home (location)",aTxt,aCls,(b)=>{
+    b.appendChild(statLine("Daytime scene", r.day||"— none —"));
+    b.appendChild(statLine("Evening scene", r.evening||"— none —"));
+    b.appendChild(statLine("Home location", STATE.home?"set":"not set"));
+    b.appendChild(statLine("Last run", timeAgo(le.arrive)));
+    const homeState=h("span",{id:"homeState",class:"pill",text:STATE.home?"set ✓":"not set"});
+    b.appendChild(h("div",{class:"field"},[ h("label",null,["Home location (needed to tell day from evening)"]),
+      h("div",{class:"row"},[ homeState,
+        h("button",{class:"btn sec",style:"margin:0;width:auto;padding:9px 14px",text:"Use current location",onclick:setHome}) ]) ]));
+    b.appendChild(h("div",{class:"field"},[ h("label",null,["Daytime scene"]), h("select",{id:"rDay"}) ]));
+    b.appendChild(h("div",{class:"field"},[ h("label",null,["Evening scene"]), h("select",{id:"rEve"}) ]));
+    b.appendChild(h("button",{class:"btn",text:"Save",onclick:saveRoles}));
+    b.appendChild(shortcutBox("Arrive", FUNCS+"/arrive?key="+CODE));
+  }));
+
+  box.appendChild(autoCard("Leave home","When you leave home (location)","Active","green",(b)=>{
+    b.appendChild(statLine("Action", r.away?("scene: "+r.away):"turn all lights off"));
+    b.appendChild(statLine("Last run", timeAgo(le.leave)));
+    b.appendChild(h("div",{class:"field"},[ h("label",null,["Scene when you leave (blank = all off)"]), h("select",{id:"rAway"}) ]));
+    b.appendChild(h("button",{class:"btn",text:"Save",onclick:saveRoles}));
+    b.appendChild(shortcutBox("Leave", FUNCS+"/leave?key="+CODE));
+  }));
+
+  const sr=STATE.sunrise||{};
+  box.appendChild(autoCard("Sunrise ramp","Every morning at a set time", sr.enabled?"On":"Off", sr.enabled?"green":"gray",(b)=>{
+    b.appendChild(h("div",{class:"row"},[ h("span",{class:"mini",text:"Enabled"}), h("div",{id:"srToggle",class:"toggle",onclick:toggleSunrise}) ]));
+    b.appendChild(statLine("Last run", timeAgo(le.sunrise)));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},[
+      h("div",{class:"field",style:"margin:0"},[h("label",null,["Start time"]),h("input",{id:"srStart",type:"time"})]),
+      h("div",{class:"field",style:"margin:0"},[h("label",null,["Duration (min)"]),h("input",{id:"srDur",type:"number",min:"5",max:"120"})]) ]));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:10px"},[
+      h("div",{class:"field",style:"margin:0"},[h("label",null,["Start brightness %"]),h("input",{id:"srB0",type:"number",min:"1",max:"100"})]),
+      h("div",{class:"field",style:"margin:0"},[h("label",null,["End brightness %"]),h("input",{id:"srB1",type:"number",min:"1",max:"100"})]) ]));
+    b.appendChild(h("div",{class:"field"},[ h("label",null,["Which lights"]), h("div",{id:"srDevices"}) ]));
+    b.appendChild(h("button",{class:"btn",text:"Save sunrise",onclick:saveSunrise}));
+    b.appendChild(h("div",{class:"mini",style:"margin-top:8px"},["Runs on the server every morning — no iPhone Shortcut needed."]));
+  }));
+}
+
 async function boot(){
   try{ STATE=await api({action:"list"}); }catch(e){return;}
   $("gate").classList.add("hidden");
@@ -416,9 +485,7 @@ async function boot(){
   $("status").textContent=STATE.devices.length+" lights";
   const dbox=$("devices");dbox.replaceChildren();
   for(const d of STATE.devices)dbox.appendChild(deviceCard(d));
-  renderScenes(); renderGroupsPalettes(); fillRoleSelects(); renderSunrise();
-  const hs=$("homeState");
-  if(STATE.home) hs.replaceChildren(h("span",{class:"ok",text:"set ✓"})); else hs.textContent="not set";
+  renderScenes(); renderGroupsPalettes(); renderAutomations(); fillRoleSelects(); renderSunrise();
 }
 
 $("connect").addEventListener("click",saveCode);
@@ -426,10 +493,6 @@ $("apApply").addEventListener("click",applyPaletteNow);
 $("apSave").addEventListener("click",saveGroupScene);
 $("ngSave").addEventListener("click",addGroup);
 $("npSave").addEventListener("click",addPalette);
-$("homeBtn").addEventListener("click",setHome);
-$("rolesBtn").addEventListener("click",saveRoles);
-$("srBtn").addEventListener("click",saveSunrise);
-$("srToggle").addEventListener("click",toggleSunrise);
 
 if(CODE) boot(); else gate();
 </script>
