@@ -247,7 +247,8 @@ function buildUIStateCommands(){
 }
 
 async function savePreset(){
-  const name=prompt("Name this scene (e.g. Arrive – Evening):"); if(!name)return;
+  let name=prompt("Name this scene (e.g. Arrive – Evening):"); if(!name)return;
+  name=name.trim(); if(!name)return;
   const commands=buildUIStateCommands();
   if(!commands.length){toast("Adjust some lights first");return;}
   await api({action:"savePreset",name,commands}); toast("Saved "+name); boot();
@@ -375,7 +376,8 @@ async function applyPaletteNow(){
 async function saveGroupScene(){
   const group=$("apGroup").value, palette=$("apPalette").value;
   if(!group||!palette){toast("Make a group and palette first");return;}
-  const name=prompt("Name this scene:", palette+" "+group); if(!name)return;
+  let name=prompt("Name this scene:", palette+" "+group); if(!name)return;
+  name=name.trim(); if(!name)return;
   await api({action:"saveGroupPreset",name,group,palette}); toast("Saved "+name); boot();
 }
 async function addGroup(){
@@ -409,6 +411,31 @@ function timeAgo(iso){
 }
 function copyText(t){ if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>toast("Copied")); else toast("Copy not supported"); }
 function statLine(label,val){ return h("div",{class:"statline"},[ h("span",{text:label}), h("span",{class:"v",text:val}) ]); }
+
+async function fireWebhook(kind){
+  toast("Testing "+kind+"…");
+  try{
+    const r=await fetch(FUNCS+"/"+kind+"?key="+encodeURIComponent(CODE),{method:"POST"});
+    const d=await r.json();
+    if(kind==="arrive") toast(d.applied?("Arrive → "+d.applied):(d.note||"Arrive: no scene assigned"));
+    else toast(d.applied?("Leave → "+d.applied):"Leave ran");
+    boot();
+  }catch(e){ toast("Test failed"); }
+}
+
+async function testSunrise(){
+  const s=STATE.sunrise||{}; const keys=s.device_keys||[];
+  if(!keys.length){toast("Pick lights & save sunrise first");return;}
+  toast("Previewing sunrise start…");
+  for(const k of keys){
+    const dev=STATE.devices.find(d=>d.key===k); if(!dev) continue;
+    const cap=new Set(dev.capabilities||[]);
+    await api({action:"command",device:k,capability:{type:"devices.capabilities.on_off",instance:"powerSwitch",value:1}});
+    if(cap.has("brightness")) await api({action:"command",device:k,capability:{type:"devices.capabilities.range",instance:"brightness",value:s.start_brightness??1}});
+    if(cap.has("colorTemperatureK")) await api({action:"command",device:k,capability:{type:"devices.capabilities.color_setting",instance:"colorTemperatureK",value:s.start_kelvin??2200}});
+  }
+  toast("Sunrise start preview applied");
+}
 
 function shortcutBox(kind,url){
   return h("div",{class:"shortcut"},[
@@ -444,6 +471,7 @@ function renderAutomations(){
     b.appendChild(statLine("Evening scene", r.evening||"— none —"));
     b.appendChild(statLine("Home location", STATE.home?"set":"not set"));
     b.appendChild(statLine("Last run", timeAgo(le.arrive)));
+    b.appendChild(h("button",{class:"btn",style:"margin-top:14px",text:"Test now",onclick:()=>fireWebhook("arrive")}));
     const homeState=h("span",{id:"homeState",class:"pill",text:STATE.home?"set ✓":"not set"});
     b.appendChild(h("div",{class:"field"},[ h("label",null,["Home location (needed to tell day from evening)"]),
       h("div",{class:"row"},[ homeState,
@@ -457,6 +485,7 @@ function renderAutomations(){
   box.appendChild(autoCard("Leave home","When you leave home (location)","Active","green",(b)=>{
     b.appendChild(statLine("Action", r.away?("scene: "+r.away):"turn all lights off"));
     b.appendChild(statLine("Last run", timeAgo(le.leave)));
+    b.appendChild(h("button",{class:"btn",style:"margin-top:14px",text:"Test now",onclick:()=>fireWebhook("leave")}));
     b.appendChild(h("div",{class:"field"},[ h("label",null,["Scene when you leave (blank = all off)"]), h("select",{id:"rAway"}) ]));
     b.appendChild(h("button",{class:"btn",text:"Save",onclick:saveRoles}));
     b.appendChild(shortcutBox("Leave", FUNCS+"/leave?key="+CODE));
@@ -466,6 +495,7 @@ function renderAutomations(){
   box.appendChild(autoCard("Sunrise ramp","Every morning at a set time", sr.enabled?"On":"Off", sr.enabled?"green":"gray",(b)=>{
     b.appendChild(h("div",{class:"row"},[ h("span",{class:"mini",text:"Enabled"}), h("div",{id:"srToggle",class:"toggle",onclick:toggleSunrise}) ]));
     b.appendChild(statLine("Last run", timeAgo(le.sunrise)));
+    b.appendChild(h("button",{class:"btn",style:"margin-top:14px",text:"Preview start",onclick:testSunrise}));
     b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},[
       h("div",{class:"field",style:"margin:0"},[h("label",null,["Start time"]),h("input",{id:"srStart",type:"time"})]),
       h("div",{class:"field",style:"margin:0"},[h("label",null,["Duration (min)"]),h("input",{id:"srDur",type:"number",min:"5",max:"120"})]) ]));
